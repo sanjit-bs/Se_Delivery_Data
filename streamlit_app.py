@@ -25,13 +25,14 @@ COLUMNS2 = [
 
 COMPANY_OPTIONS = [
     "Select",
-    "Kamal’s cake (SOUTH SANKRAIL)",
+    # "Kamal’s cake (SOUTH SANKRAIL)",
     "Adela Labs Pvt. Ltd (HOWRAH FOOD PARK)",
-    "Kamals Ice Cream & Industries Pvt. Ltd  (ORL E) (Dhulagori)",
+    # "Kamals Ice Cream & Industries Pvt. Ltd  (ORL E) (Dhulagori)",
     "Kamals Ice Cream (Shaoraphuli, ”Adila”)",
-    "Agarwal Food Product (Sankrail)",
-    "Pamir Ice Cream (Raiganj)",
-    "Top notch (Gaighata)",
+    # "Agarwal Food Product (Sankrail)",
+    # "Pamir Ice Cream (Raiganj)",
+    # "Top notch (Gaighata)",
+    "SIROMONI FOOD PRODUCTS PVT. LTD (MIDNAPUR)",
     "Cold Roll (Gaighata)",
 ]
 
