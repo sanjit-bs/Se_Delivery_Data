@@ -9,7 +9,7 @@ import streamlit as st
 # Transport Record Section & Configuration
 # ======================================================
 
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw_sQIgHy6VwH5nfzkUmbjqBbGzR698yOvY1bm-AAWiiyc7PLWnCQFCD80T3aVZnvNH/exec"
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzAH530mCrkFHGBGtMJBGvo2REISuHgA7UGDV3zf7Z5l77dMyAguc_qlSmxMbEFx5prJg/exec"
 
 # COLUMNS2 includes 'Invoice Link' right after 'Remark'
 COLUMNS2 = [
