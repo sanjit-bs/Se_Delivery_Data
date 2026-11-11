@@ -1,15 +1,17 @@
-import streamlit as st
-import pandas as pd
+import base64
 from datetime import date
 import re
+import pandas as pd
 import requests
+import streamlit as st
 
 # ======================================================
-# Transport Record Section
+# Transport Record Section & Configuration
 # ======================================================
 
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxHFmdP6UKrqi8XEql3q-nW6K5qcm24ofPkSxMw-u-FBIIVvt6yA0iwFNOYtlLqGdT/exec"
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw_sQIgHy6VwH5nfzkUmbjqBbGzR698yOvY1bm-AAWiiyc7PLWnCQFCD80T3aVZnvNH/exec"
 
+# COLUMNS2 includes 'Invoice Link' right after 'Remark'
 COLUMNS2 = [
     "Date",
     "Vehicle No.",
@@ -19,6 +21,7 @@ COLUMNS2 = [
     "Company & Location",
     "Invoice Received",
     "Remark",
+    "Invoice Link",
     "Loading Charge",
     "Unloading Charge",
 ]
@@ -48,13 +51,16 @@ VEHICLE_MASTER = {
     "Others": {"driver": "", "owner": ""},
 }
 
+
 # ======================================================
 # Backend API Calls & Data Loaders
 # ======================================================
 @st.cache_data(ttl=5)
 def load_delivery_data():
     try:
-        res = requests.get(f"{APPS_SCRIPT_URL}?action=read_delivery", timeout=30)
+        res = requests.get(
+            f"{APPS_SCRIPT_URL}?action=read_delivery", timeout=30
+        )
         data = res.json().get("delivery", [])
         df = pd.DataFrame(data)
     except Exception:
@@ -74,6 +80,7 @@ def load_delivery_data():
         "Company & Location",
         "Invoice Received",
         "Remark",
+        "Invoice Link",
     ]
     for col in text_cols:
         df[col] = df[col].astype(str).str.strip()
@@ -82,6 +89,43 @@ def load_delivery_data():
 
 
 delivery_df = load_delivery_data()
+
+
+# ======================================================
+# Apps Script Upload Helper for Scan Copy
+# ======================================================
+def upload_scan_to_drive_via_appscript(
+    file_bytes, file_name, mime_type, company_name
+):
+    """Encodes file bytes and posts to Apps Script to store in 'receive invoice/[Company Name]' subfolder."""
+    encoded_file = base64.b64encode(file_bytes).decode("utf-8")
+
+    payload = {
+        "action": "upload_invoice",
+        "company": company_name.strip(),
+        "fileName": file_name,
+        "mimeType": mime_type,
+        "fileData": encoded_file,
+    }
+
+    try:
+        response = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("status") == "success":
+                return res_json.get("link", "")
+            else:
+                st.error(
+                    f"Apps Script Error: {res_json.get('message', 'Unknown error')}"
+                )
+        else:
+            st.error(
+                f"HTTP Error {response.status_code}: Could not reach Apps Script Endpoint."
+            )
+    except Exception as e:
+        st.error(f"Failed to connect to Apps Script: {e}")
+    return None
+
 
 # ======================================================
 # Auto-Increment Sequence Logic (Format: SE/039/26-27)
@@ -145,6 +189,8 @@ if "current_owner" not in st.session_state:
     st.session_state.current_owner = ""
 if "current_invoice" not in st.session_state:
     st.session_state.current_invoice = suggested_next_invoice
+if "receive_modal_item" not in st.session_state:
+    st.session_state.receive_modal_item = None
 
 
 def update_vehicle_details():
@@ -228,6 +274,7 @@ if st.button("Submit Delivery Log", type="primary"):
             "company": company.strip(),
             "invoice_received": "No",
             "remark": remark.strip(),
+            "invoice_link": "",
             "loading_charge": 0.0,
             "unloading_charge": 0.0,
         }
@@ -280,8 +327,8 @@ else:
 
     for idx, row in pending_df.iterrows():
         gs_row = idx + 2
-        col_date, col_inv, col_veh, col_driver, col_comp, col_act = (
-            st.columns([1.2, 1.5, 1.5, 1.5, 2.5, 1])
+        col_date, col_inv, col_veh, col_driver, col_comp, col_act = st.columns(
+            [1.2, 1.5, 1.5, 1.5, 2.5, 1]
         )
 
         with col_date:
@@ -301,21 +348,104 @@ else:
         with col_comp:
             st.write(row["Company & Location"])
         with col_act:
-            if st.checkbox("Receive", key=f"recv_approval_act_{gs_row}"):
-                params = {
-                    "action": "update_received",
-                    "row_index": gs_row,
+            if st.button("Receive 📩", key=f"btn_recv_{gs_row}"):
+                st.session_state.receive_modal_item = {
+                    "gs_row": gs_row,
                     "invoice_no": row["Invoice No."],
-                    "status": "Yes",
+                    "company": row["Company & Location"],
                 }
-                requests.get(APPS_SCRIPT_URL, params=params, timeout=30)
-                st.toast(f"✅ Marked Invoice {row['Invoice No.']} as Received!")
-                st.cache_data.clear()
-                fresh_df = load_delivery_data()
-                st.session_state.current_invoice = get_next_invoice_number(
-                    fresh_df
-                )
                 st.rerun()
+
+# ======================================================
+# Modal Dialog for Scan Copy Capture / Upload
+# ======================================================
+if st.session_state.receive_modal_item is not None:
+    item = st.session_state.receive_modal_item
+
+    @st.dialog("📸 Upload Scanned Invoice Copy")
+    def open_receive_modal():
+        st.write(f"**Invoice No:** `{item['invoice_no']}`")
+        st.write(f"**Company:** `{item['company']}`")
+
+        input_mode = st.radio(
+            "Select Scan Input Method",
+            ["📷 Camera Capture", "📁 Upload File from Device"],
+            horizontal=True,
+        )
+
+        file_data = None
+        if input_mode == "📷 Camera Capture":
+            file_data = st.camera_input("Take Invoice Photo")
+        else:
+            file_data = st.file_uploader(
+                "Choose Invoice Image/PDF", type=["png", "jpg", "jpeg", "pdf"]
+            )
+
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            if st.button(
+                "Confirm & Upload to Drive", type="primary", use_container_width=True
+            ):
+                if file_data is None:
+                    st.warning("Please upload or capture an image first.")
+                else:
+                    with st.spinner(
+                        "Uploading to Google Drive & Updating Sheet..."
+                    ):
+                        bytes_content = file_data.getvalue()
+                        filename_clean = item["invoice_no"].replace("/", "_")
+                        ext = (
+                            file_data.name.split(".")[-1]
+                            if hasattr(file_data, "name")
+                            and "." in file_data.name
+                            else "png"
+                        )
+                        file_name = f"{filename_clean}_Scan.{ext}"
+                        mime_type = (
+                            getattr(file_data, "type", "image/png")
+                            or "image/png"
+                        )
+
+                        # 1. Upload scan copy via Apps Script Web App
+                        drive_link = upload_scan_to_drive_via_appscript(
+                            bytes_content,
+                            file_name,
+                            mime_type,
+                            item["company"],
+                        )
+
+                        if drive_link:
+                            # 2. Update status and link via Apps Script
+                            params = {
+                                "action": "update_received",
+                                "row_index": item["gs_row"],
+                                "invoice_no": item["invoice_no"],
+                                "status": "Yes",
+                                "invoice_link": drive_link,
+                            }
+                            requests.get(
+                                APPS_SCRIPT_URL, params=params, timeout=30
+                            )
+
+                            st.toast(
+                                f"✅ Marked Invoice {item['invoice_no']} as Received & Drive Link Saved!"
+                            )
+
+                            # 3. Cache clearing and page refresh
+                            st.cache_data.clear()
+                            fresh_df = load_delivery_data()
+                            st.session_state.current_invoice = (
+                                get_next_invoice_number(fresh_df)
+                            )
+                            st.session_state.receive_modal_item = None
+                            st.rerun()
+
+        with col_m2:
+            if st.button("Cancel", use_container_width=True):
+                st.session_state.receive_modal_item = None
+                st.rerun()
+
+    open_receive_modal()
 
 # ======================================================
 # UI Section: Post-Submission Loading / Unloading Charges
