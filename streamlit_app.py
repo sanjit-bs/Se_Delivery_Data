@@ -549,4 +549,4 @@ else:
 ############# Ready Product Stock Management ########################
 st.markdown("---")
 st.subheader("⭐Ready Product Stock Management⭐")
-st.markdown("[Ready Product Stock Management App] (https://shivam-ready-stock-manager-app-m0ynofi753.streamlit.app)"
+st.markdown"([Ready Product Stock Management App] (https://shivam-ready-stock-manager-app-m0ynofi753.streamlit.app)"
